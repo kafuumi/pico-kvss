@@ -26,6 +26,10 @@ extern "C" {
 #define ADDR_SECT_SHIFT 16
 #define ADDR_OFFS_MASK 0x0000FFFF
 
+#if !defined(KB)
+#define KB(value) (size_t)((value) << 10)
+#endif
+
 #define NVS_MAX_SECTOR_SIZE KB(64)
 
 /*
@@ -107,9 +111,8 @@ struct nvs_ate {
     uint8_t crc8;    /* crc8 check of the entry */
 } __packed;
 
-#if (offsetof(struct nvs_ate, crc8) != sizeof(struct nvs_ate) - sizeof(uint8_t))
-#error "crc8 must be the last member"
-#endif
+_Static_assert(offsetof(struct nvs_ate, crc8) == sizeof(struct nvs_ate) - sizeof(uint8_t),
+               "crc8 must be the last member");
 
 #if defined(CONFIG_ZTEST)
 int nvs_flash_al_wrt_streams(struct nvs_fs *fs, uint32_t addr, const struct nvs_flash_wrt_stream *strm);

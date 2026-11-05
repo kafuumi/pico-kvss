@@ -6,19 +6,50 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "nvs_priv.h"
 #include <errno.h>
 #include <inttypes.h>
 #include <string.h>
-#include <zephyr/drivers/flash.h>
-#include <zephyr/kvss/nvs.h>
-#include <zephyr/sys/crc.h>
 
-#include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(fs_nvs, CONFIG_NVS_LOG_LEVEL);
+#include "nvs/nvs.h"
+#include "nvs_crc.h"
+#include "nvs_port.h"
+#include "nvs_priv.h"
+
+#if !defined(ARRAY_SIZE)
+#define ARRAY_SIZE(arr) ((sizeof((arr))) / (sizeof((arr)[0])))
+#endif /* ARRAY_SIZE */
+
+#if !defined(MIN)
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+
+#if !defined(MAX)
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#endif
 
 static int nvs_prev_ate(struct nvs_fs *fs, uint32_t *addr, struct nvs_ate *ate);
 static int nvs_ate_valid(struct nvs_fs *fs, uint16_t entry_addr, const struct nvs_ate *entry);
+
+static inline int flash_write(struct nvs_hal_flash flash, uint32_t addr, const uint8_t *buf, size_t size) {
+    if (size == 0) {
+        return 0;
+    }
+    return flash.write(addr, buf, size);
+}
+
+static inline int flash_read(struct nvs_hal_flash flash, uint32_t addr, uint8_t *buf, size_t size) {
+    if (size == 0) {
+        return 0;
+    }
+    return flash.read(addr, buf, size);
+}
+
+static inline int flash_flatten(struct nvs_hal_flash flash, uint32_t offset, size_t size) {
+    if (size == 0) {
+        return 0;
+    }
+    return flash.erase(offset, size);
+}
 
 #ifdef CONFIG_NVS_LOOKUP_CACHE
 
@@ -100,8 +131,7 @@ static inline size_t nvs_al_size(struct nvs_fs *fs, size_t len) {
  * may include a header, primary data, and a tail. All buffers are
  * written as a single contiguous stream.
  */
-ZTESTABLE_STATIC int nvs_flash_al_wrt_streams(struct nvs_fs *fs, uint32_t addr,
-                                              const struct nvs_flash_wrt_stream *strm) {
+static int nvs_flash_al_wrt_streams(struct nvs_fs *fs, uint32_t addr, const struct nvs_flash_wrt_stream *strm) {
     const struct flash_parameters *fp = fs->flash_parameters;
     size_t wbs = fp->write_block_size;
     uint8_t buf[NVS_BLOCK_SIZE];
@@ -233,13 +263,18 @@ static int nvs_flash_data_al_wrt(struct nvs_fs *fs, struct nvs_flash_wrt_stream 
     uint32_t data_crc;
     int rc;
 
-    /* Only add the CRC if required (ignore deletion requests, i.e. when len is 0) */
-    if (IS_ENABLED(CONFIG_NVS_DATA_CRC) && compute_crc && (strm->data.len > 0)) {
+/* Only add the CRC if required (ignore deletion requests, i.e. when len is 0) */
+#if CONFIG_NVS_DATA_CRC
+    if (compute_crc && (strm->data.len > 0)) {
         data_crc = crc32_ieee(strm->data.ptr, strm->data.len);
 
         strm->tail.ptr = (void *)&data_crc;
         strm->tail.len = sizeof(data_crc);
     }
+#else
+    (void)compute_crc;
+    (void)data_crc;
+#endif /* CONFIG_NVS_DATA_CRC */
 
     rc = nvs_flash_al_wrt_streams(fs, fs->data_wra, strm);
 
@@ -472,7 +507,7 @@ static int nvs_ate_cmp_const(const struct nvs_ate *entry, uint8_t value) {
     const uint8_t *data8 = (const uint8_t *)entry;
     int i;
 
-    for (i = 0; i < sizeof(struct nvs_ate); i++) {
+    for (i = 0; (size_t)i < sizeof(struct nvs_ate); i++) {
         if (data8[i] != value) {
             return 1;
         }
@@ -486,6 +521,7 @@ static int nvs_ate_cmp_const(const struct nvs_ate *entry, uint8_t value) {
  *            0 otherwise
  */
 static int nvs_ate_valid(struct nvs_fs *fs, uint16_t entry_addr, const struct nvs_ate *entry) {
+    (void)fs;
     uint32_t position;
 
     position = entry->offset + entry->len;
@@ -914,7 +950,7 @@ static int nvs_startup(struct nvs_fs *fs) {
     uint16_t i, closed_sectors = 0;
     uint8_t erase_value = fs->flash_parameters->erase_value;
 
-    k_mutex_lock(&fs->nvs_lock, K_FOREVER);
+    fs->nvs_lock.lock(NVS_HAL_TIMEOUT_FOREVER);
 
     ate_size = nvs_al_size(fs, sizeof(struct nvs_ate));
     /* step through the sectors to find a open sector following
@@ -1133,7 +1169,7 @@ end:
 
         rc = nvs_add_gc_done_ate(fs);
     }
-    k_mutex_unlock(&fs->nvs_lock);
+    fs->nvs_lock.unlock();
     return rc;
 }
 
@@ -1162,18 +1198,15 @@ int nvs_clear(struct nvs_fs *fs) {
 
 int nvs_mount(struct nvs_fs *fs) {
     int rc;
-    struct flash_pages_info info;
     size_t write_block_size;
 
-    k_mutex_init(&fs->nvs_lock);
-
-    fs->flash_parameters = flash_get_parameters(fs->flash_device);
+    fs->flash_parameters = fs->flash_device.get_parameters();
     if (fs->flash_parameters == NULL) {
         LOG_ERR("Could not obtain flash parameters");
         return -EINVAL;
     }
 
-    write_block_size = flash_get_write_block_size(fs->flash_device);
+    write_block_size = fs->flash_parameters->write_block_size;
 
     /* check that the write block size is supported */
     if (write_block_size > NVS_BLOCK_SIZE || write_block_size == 0) {
@@ -1188,12 +1221,12 @@ int nvs_mount(struct nvs_fs *fs) {
     }
 
     /* check that sector size is a multiple of pagesize */
-    rc = flash_get_page_info_by_offs(fs->flash_device, fs->offset, &info);
+    /* rc = flash_get_page_info_by_offs(fs->flash_device, fs->offset, &info);
     if (rc) {
         LOG_ERR("Unable to get page info");
         return -EINVAL;
-    }
-    if (!fs->sector_size || fs->sector_size % info.size) {
+    } */
+    if (!fs->sector_size || fs->sector_size % fs->flash_parameters->page_size) {
         LOG_ERR("Invalid sector size");
         return -EINVAL;
     }
@@ -1313,8 +1346,7 @@ no_cached_entry:
         /* Leave space for delete ate */
         required_space = data_size + ate_size;
     }
-
-    k_mutex_lock(&fs->nvs_lock, K_FOREVER);
+    fs->nvs_lock.lock(NVS_HAL_TIMEOUT_FOREVER);
 
     gc_count = 0;
     while (1) {
@@ -1366,7 +1398,7 @@ no_cached_entry:
     }
     rc = len;
 end:
-    k_mutex_unlock(&fs->nvs_lock);
+    fs->nvs_lock.unlock();
     return rc;
 }
 
@@ -1556,7 +1588,7 @@ int nvs_sector_use_next(struct nvs_fs *fs) {
         return -EACCES;
     }
 
-    k_mutex_lock(&fs->nvs_lock, K_FOREVER);
+    fs->nvs_lock.lock(NVS_HAL_TIMEOUT_FOREVER);
 
     ret = nvs_sector_close(fs);
     if (ret != 0) {
@@ -1566,6 +1598,6 @@ int nvs_sector_use_next(struct nvs_fs *fs) {
     ret = nvs_gc(fs, NULL);
 
 end:
-    k_mutex_unlock(&fs->nvs_lock);
+    fs->nvs_lock.unlock();
     return ret;
 }
