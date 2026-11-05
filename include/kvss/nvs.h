@@ -63,9 +63,9 @@ struct nvs_fs {
     /** Flag indicating if the file system is initialized */
     bool ready;
     /** Mutex */
-    struct nvs_hal_mutex nvs_lock;
+    const struct kvss_hal_mutex nvs_lock;
     /** Flash device runtime structure */
-    const struct nvs_hal_flash flash_device;
+    const struct kvss_hal_flash flash_device;
     /** Flash memory parameters structure */
     const struct flash_parameters *flash_parameters;
 #if CONFIG_NVS_LOOKUP_CACHE

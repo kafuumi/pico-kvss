@@ -10,7 +10,7 @@ extern "C" {
 
 #define NVS_HAL_TIMEOUT_FOREVER UINT32_MAX
 
-struct nvs_hal_mutex {
+struct kvss_hal_mutex {
     int (*lock)(uint32_t timeout);
     void (*unlock)();
 };
@@ -21,7 +21,7 @@ struct flash_parameters {
     uint8_t erase_value;
 };
 
-struct nvs_hal_flash {
+struct kvss_hal_flash {
     struct flash_parameters *(*get_parameters)();
     int (*read)(uint32_t addr, uint8_t *buf, size_t size);
     int (*write)(uint32_t addr, const uint8_t *buf, size_t size);

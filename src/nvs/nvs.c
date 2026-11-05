@@ -30,21 +30,21 @@
 static int nvs_prev_ate(struct nvs_fs *fs, uint32_t *addr, struct nvs_ate *ate);
 static int nvs_ate_valid(struct nvs_fs *fs, uint16_t entry_addr, const struct nvs_ate *entry);
 
-static inline int flash_write(struct nvs_hal_flash flash, uint32_t addr, const uint8_t *buf, size_t size) {
+static inline int flash_write(struct kvss_hal_flash flash, uint32_t addr, const uint8_t *buf, size_t size) {
     if (size == 0) {
         return 0;
     }
     return flash.write(addr, buf, size);
 }
 
-static inline int flash_read(struct nvs_hal_flash flash, uint32_t addr, uint8_t *buf, size_t size) {
+static inline int flash_read(struct kvss_hal_flash flash, uint32_t addr, uint8_t *buf, size_t size) {
     if (size == 0) {
         return 0;
     }
     return flash.read(addr, buf, size);
 }
 
-static inline int flash_flatten(struct nvs_hal_flash flash, uint32_t offset, size_t size) {
+static inline int flash_flatten(struct kvss_hal_flash flash, uint32_t offset, size_t size) {
     if (size == 0) {
         return 0;
     }
