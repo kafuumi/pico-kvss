@@ -19,7 +19,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-#include "nvs_hal.h"
+#include "kvss_hal.h"
 
 #ifdef __cplusplus
 extern "C" {

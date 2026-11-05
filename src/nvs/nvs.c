@@ -10,7 +10,7 @@
 #include <inttypes.h>
 #include <string.h>
 
-#include "nvs/nvs.h"
+#include "kvss/nvs.h"
 #include "nvs_crc.h"
 #include "nvs_port.h"
 #include "nvs_priv.h"
