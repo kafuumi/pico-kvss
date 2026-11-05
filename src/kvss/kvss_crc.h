@@ -1,5 +1,5 @@
-#if !defined(NVS_CRC_H_)
-#define NVS_CRC_H_
+#if !defined(KVSS_CRC_H_)
+#define KVSS_CRC_H_
 
 #include <stddef.h>
 #include <stdint.h>

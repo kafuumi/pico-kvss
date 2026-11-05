@@ -13,6 +13,8 @@
 #include <stdint.h>
 
 #include "kvss/zms.h"
+#include "kvss_port.h"
+#include "utils_micro.h"
 
 /*
  * MASKS AND SHIFT FOR ADDRESSES.
@@ -26,7 +28,7 @@
 #define SECTOR_NUM(x) FIELD_GET(ADDR_SECT_MASK, x)
 #define SECTOR_OFFSET(x) FIELD_GET(ADDR_OFFS_MASK, x)
 
-#if defined(CONFIG_ZMS_CUSTOMIZE_BLOCK_SIZE)
+#if defined(CONFIG_ZMS_CUSTOMIZE_BLOCK_SIZE) && CONFIG_ZMS_CUSTOMIZE_BLOCK_SIZE
 #define ZMS_BLOCK_SIZE CONFIG_ZMS_CUSTOM_BLOCK_SIZE
 #else
 #define ZMS_BLOCK_SIZE 32
@@ -49,7 +51,7 @@
 #define ZMS_ATE_FORMAT_ID_32BIT 0
 #define ZMS_ATE_FORMAT_ID_64BIT 1
 
-#if !defined(CONFIG_ZMS_ID_64BIT)
+#if !defined(CONFIG_ZMS_ID_64BIT) || !CONFIG_ZMS_ID_64BIT
 #define ZMS_DEFAULT_ATE_FORMAT ZMS_ATE_FORMAT_ID_32BIT
 #define ZMS_HEAD_ID GENMASK(31, 0)
 #else
@@ -124,5 +126,8 @@ struct zms_ate {
  */
 _Static_assert(ZMS_DATA_IN_ATE_SIZE == SIZEOF_FIELD(struct zms_ate, data),
                "ZMS_DATA_IN_ATE_SIZE does not match the ATE data field size");
+
+/* The on-flash ATE format is fixed at 16 bytes regardless of ID width. */
+_Static_assert(sizeof(struct zms_ate) == 16, "ZMS ATE must be 16 bytes on flash");
 
 #endif /* __ZMS_PRIV_H_ */

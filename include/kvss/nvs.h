@@ -25,6 +25,11 @@
 extern "C" {
 #endif
 
+/* Kconfig default used when the configuration layer does not provide it. */
+#if !defined(CONFIG_NVS_LOOKUP_CACHE_SIZE)
+#define CONFIG_NVS_LOOKUP_CACHE_SIZE 128
+#endif
+
 /**
  * @brief Non-volatile Storage (NVS)
  * @defgroup nvs Non-volatile Storage (NVS)
@@ -63,12 +68,12 @@ struct nvs_fs {
     /** Flag indicating if the file system is initialized */
     bool ready;
     /** Mutex */
-    const struct kvss_hal_mutex nvs_lock;
+    struct kvss_hal_mutex nvs_lock;
     /** Flash device runtime structure */
-    const struct kvss_hal_flash flash_device;
+    struct kvss_hal_flash flash_device;
     /** Flash memory parameters structure */
     const struct flash_parameters *flash_parameters;
-#if CONFIG_NVS_LOOKUP_CACHE
+#if defined(CONFIG_NVS_LOOKUP_CACHE) && CONFIG_NVS_LOOKUP_CACHE
     uint32_t lookup_cache[CONFIG_NVS_LOOKUP_CACHE_SIZE];
 #endif
 };

@@ -11,21 +11,9 @@
 #include <string.h>
 
 #include "kvss/nvs.h"
-#include "nvs_crc.h"
+#include "kvss_crc.h"
 #include "nvs_port.h"
 #include "nvs_priv.h"
-
-#if !defined(ARRAY_SIZE)
-#define ARRAY_SIZE(arr) ((sizeof((arr))) / (sizeof((arr)[0])))
-#endif /* ARRAY_SIZE */
-
-#if !defined(MIN)
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#endif
-
-#if !defined(MAX)
-#define MAX(a, b) (((a) > (b)) ? (a) : (b))
-#endif
 
 static int nvs_prev_ate(struct nvs_fs *fs, uint32_t *addr, struct nvs_ate *ate);
 static int nvs_ate_valid(struct nvs_fs *fs, uint16_t entry_addr, const struct nvs_ate *entry);
@@ -51,7 +39,7 @@ static inline int flash_flatten(struct kvss_hal_flash flash, uint32_t offset, si
     return flash.erase(offset, size);
 }
 
-#ifdef CONFIG_NVS_LOOKUP_CACHE
+#if defined(CONFIG_NVS_LOOKUP_CACHE) && CONFIG_NVS_LOOKUP_CACHE
 
 static inline size_t nvs_lookup_cache_pos(uint16_t id) {
     uint16_t hash;
@@ -131,7 +119,7 @@ static inline size_t nvs_al_size(struct nvs_fs *fs, size_t len) {
  * may include a header, primary data, and a tail. All buffers are
  * written as a single contiguous stream.
  */
-static int nvs_flash_al_wrt_streams(struct nvs_fs *fs, uint32_t addr, const struct nvs_flash_wrt_stream *strm) {
+KVSS_TESTABLE_STATIC int nvs_flash_al_wrt_streams(struct nvs_fs *fs, uint32_t addr, const struct nvs_flash_wrt_stream *strm) {
     const struct flash_parameters *fp = fs->flash_parameters;
     size_t wbs = fp->write_block_size;
     uint8_t buf[NVS_BLOCK_SIZE];
@@ -171,7 +159,7 @@ static int nvs_flash_al_wrt_streams(struct nvs_fs *fs, uint32_t addr, const stru
             full_bytes = streams[stream_idx].len & ~(wbs - 1);
 
             if (full_bytes > 0U) {
-                rc = flash_write(fs->flash_device, offset, streams[stream_idx].ptr, full_bytes);
+                rc = flash_write(fs->flash_device, (uint32_t)offset, streams[stream_idx].ptr, full_bytes);
                 if (rc) {
                     return rc;
                 }
@@ -195,7 +183,7 @@ static int nvs_flash_al_wrt_streams(struct nvs_fs *fs, uint32_t addr, const stru
 
         /* If buffer full, write to flash */
         if (buf_fill == wbs) {
-            rc = flash_write(fs->flash_device, offset, buf, wbs);
+            rc = flash_write(fs->flash_device, (uint32_t)offset, buf, wbs);
             if (rc) {
                 return rc;
             }
@@ -208,7 +196,7 @@ static int nvs_flash_al_wrt_streams(struct nvs_fs *fs, uint32_t addr, const stru
     if (buf_fill > 0U) {
         (void)memset(buf + buf_fill, fp->erase_value, wbs - buf_fill);
 
-        rc = flash_write(fs->flash_device, offset, buf, wbs);
+        rc = flash_write(fs->flash_device, (uint32_t)offset, buf, wbs);
         if (rc) {
             return rc;
         }
@@ -238,7 +226,7 @@ static int nvs_flash_rd(struct nvs_fs *fs, uint32_t addr, void *data, size_t len
     offset += fs->sector_size * (addr >> ADDR_SECT_SHIFT);
     offset += addr & ADDR_OFFS_MASK;
 
-    rc = flash_read(fs->flash_device, offset, data, len);
+    rc = flash_read(fs->flash_device, (uint32_t)offset, data, len);
     return rc;
 }
 
@@ -247,7 +235,7 @@ static int nvs_flash_ate_wrt(struct nvs_fs *fs, const struct nvs_ate *entry) {
     int rc;
 
     rc = nvs_flash_al_wrt(fs, fs->ate_wra, entry, sizeof(struct nvs_ate));
-#ifdef CONFIG_NVS_LOOKUP_CACHE
+#if defined(CONFIG_NVS_LOOKUP_CACHE) && CONFIG_NVS_LOOKUP_CACHE
     /* 0xFFFF is a special-purpose identifier. Exclude it from the cache */
     if (entry->id != 0xFFFF) {
         fs->lookup_cache[nvs_lookup_cache_pos(entry->id)] = fs->ate_wra;
@@ -264,7 +252,7 @@ static int nvs_flash_data_al_wrt(struct nvs_fs *fs, struct nvs_flash_wrt_stream 
     int rc;
 
 /* Only add the CRC if required (ignore deletion requests, i.e. when len is 0) */
-#if CONFIG_NVS_DATA_CRC
+#if defined(CONFIG_NVS_DATA_CRC) && CONFIG_NVS_DATA_CRC
     if (compute_crc && (strm->data.len > 0)) {
         data_crc = crc32_ieee(strm->data.ptr, strm->data.len);
 
@@ -459,10 +447,10 @@ static int nvs_flash_erase_sector(struct nvs_fs *fs, uint32_t addr) {
 
     LOG_DBG("Erasing flash at %lx, len %d", (long int)offset, fs->sector_size);
 
-#ifdef CONFIG_NVS_LOOKUP_CACHE
+#if defined(CONFIG_NVS_LOOKUP_CACHE) && CONFIG_NVS_LOOKUP_CACHE
     nvs_lookup_cache_invalidate(fs, addr >> ADDR_SECT_SHIFT);
 #endif
-    rc = flash_flatten(fs->flash_device, offset, fs->sector_size);
+    rc = flash_flatten(fs->flash_device, (uint32_t)offset, fs->sector_size);
 
     if (rc) {
         return rc;
@@ -839,7 +827,7 @@ static int nvs_gc(struct nvs_fs *fs, struct nvs_gc_write_entry *entry) {
             continue;
         }
 
-#ifdef CONFIG_NVS_LOOKUP_CACHE
+#if defined(CONFIG_NVS_LOOKUP_CACHE) && CONFIG_NVS_LOOKUP_CACHE
         wlk_addr = fs->lookup_cache[nvs_lookup_cache_pos(gc_ate.id)];
 
         if (wlk_addr == NVS_LOOKUP_CACHE_NO_ADDR) {
@@ -950,7 +938,7 @@ static int nvs_startup(struct nvs_fs *fs) {
     uint16_t i, closed_sectors = 0;
     uint8_t erase_value = fs->flash_parameters->erase_value;
 
-    fs->nvs_lock.lock(NVS_HAL_TIMEOUT_FOREVER);
+    fs->nvs_lock.lock(KVSS_HAL_TIMEOUT_FOREVER);
 
     ate_size = nvs_al_size(fs, sizeof(struct nvs_ate));
     /* step through the sectors to find a open sector following
@@ -972,9 +960,9 @@ static int nvs_startup(struct nvs_fs *fs) {
     }
     /* all sectors are closed, this is not a nvs fs or irreparably corrupted */
     if (closed_sectors == fs->sector_count) {
-#ifdef CONFIG_NVS_INIT_BAD_MEMORY_REGION
+#if defined(CONFIG_NVS_INIT_BAD_MEMORY_REGION) && CONFIG_NVS_INIT_BAD_MEMORY_REGION
         LOG_WRN("All sectors closed, erasing all sectors...");
-        rc = flash_flatten(fs->flash_device, fs->offset, fs->sector_size * fs->sector_count);
+        rc = flash_flatten(fs->flash_device, (uint32_t)fs->offset, fs->sector_size * fs->sector_count);
         if (rc) {
             goto end;
         }
@@ -1101,7 +1089,7 @@ static int nvs_startup(struct nvs_fs *fs) {
         fs->ate_wra &= ADDR_SECT_MASK;
         fs->ate_wra += (fs->sector_size - 2 * ate_size);
         fs->data_wra = (fs->ate_wra & ADDR_SECT_MASK);
-#ifdef CONFIG_NVS_LOOKUP_CACHE
+#if defined(CONFIG_NVS_LOOKUP_CACHE) && CONFIG_NVS_LOOKUP_CACHE
         /**
          * At this point, the lookup cache wasn't built but the gc function need to use it.
          * So, temporarily, we set the lookup cache to the end of the fs.
@@ -1157,7 +1145,7 @@ static int nvs_startup(struct nvs_fs *fs) {
 
 end:
 
-#ifdef CONFIG_NVS_LOOKUP_CACHE
+#if defined(CONFIG_NVS_LOOKUP_CACHE) && CONFIG_NVS_LOOKUP_CACHE
     if (!rc) {
         rc = nvs_lookup_cache_rebuild(fs);
     }
@@ -1198,7 +1186,19 @@ int nvs_clear(struct nvs_fs *fs) {
 
 int nvs_mount(struct nvs_fs *fs) {
     int rc;
+    uint32_t page_size;
     size_t write_block_size;
+
+    if (!fs) {
+        LOG_ERR("Invalid fs");
+        return -EINVAL;
+    }
+
+    if (!fs->nvs_lock.lock || !fs->nvs_lock.unlock || !fs->flash_device.get_parameters ||
+        !fs->flash_device.read || !fs->flash_device.write || !fs->flash_device.erase) {
+        LOG_ERR("Invalid fs configuration");
+        return -EINVAL;
+    }
 
     fs->flash_parameters = fs->flash_device.get_parameters();
     if (fs->flash_parameters == NULL) {
@@ -1207,6 +1207,7 @@ int nvs_mount(struct nvs_fs *fs) {
     }
 
     write_block_size = fs->flash_parameters->write_block_size;
+    page_size = fs->flash_parameters->page_size;
 
     /* check that the write block size is supported */
     if (write_block_size > NVS_BLOCK_SIZE || write_block_size == 0) {
@@ -1220,13 +1221,8 @@ int nvs_mount(struct nvs_fs *fs) {
         return -EINVAL;
     }
 
-    /* check that sector size is a multiple of pagesize */
-    /* rc = flash_get_page_info_by_offs(fs->flash_device, fs->offset, &info);
-    if (rc) {
-        LOG_ERR("Unable to get page info");
-        return -EINVAL;
-    } */
-    if (!fs->sector_size || fs->sector_size % fs->flash_parameters->page_size) {
+    /* check that sector size is a multiple of the erase block size */
+    if (!fs->sector_size || !page_size || fs->sector_size % page_size) {
         LOG_ERR("Invalid sector size");
         return -EINVAL;
     }
@@ -1234,6 +1230,15 @@ int nvs_mount(struct nvs_fs *fs) {
     /* check the number of sectors, it should be at least 2 */
     if (fs->sector_count < 2) {
         LOG_ERR("Configuration error - sector count");
+        return -EINVAL;
+    }
+
+    /* The HAL addresses flash with a 32-bit offset. Reject layouts that
+     * cannot be addressed without truncation.
+     */
+    if (fs->offset < 0 ||
+        ((uint64_t)fs->offset + (uint64_t)fs->sector_size * fs->sector_count) > UINT32_MAX) {
+        LOG_ERR("Flash area exceeds the 32-bit HAL address range");
         return -EINVAL;
     }
 
@@ -1280,7 +1285,7 @@ ssize_t nvs_write(struct nvs_fs *fs, uint16_t id, const void *data, size_t len) 
     }
 
     /* find latest entry with same id */
-#ifdef CONFIG_NVS_LOOKUP_CACHE
+#if defined(CONFIG_NVS_LOOKUP_CACHE) && CONFIG_NVS_LOOKUP_CACHE
     wlk_addr = fs->lookup_cache[nvs_lookup_cache_pos(id)];
 
     if (wlk_addr == NVS_LOOKUP_CACHE_NO_ADDR) {
@@ -1306,7 +1311,7 @@ ssize_t nvs_write(struct nvs_fs *fs, uint16_t id, const void *data, size_t len) 
         }
     }
 
-#ifdef CONFIG_NVS_LOOKUP_CACHE
+#if defined(CONFIG_NVS_LOOKUP_CACHE) && CONFIG_NVS_LOOKUP_CACHE
 no_cached_entry:
 #endif
 
@@ -1346,7 +1351,7 @@ no_cached_entry:
         /* Leave space for delete ate */
         required_space = data_size + ate_size;
     }
-    fs->nvs_lock.lock(NVS_HAL_TIMEOUT_FOREVER);
+    fs->nvs_lock.lock(KVSS_HAL_TIMEOUT_FOREVER);
 
     gc_count = 0;
     while (1) {
@@ -1412,7 +1417,7 @@ ssize_t nvs_read_hist(struct nvs_fs *fs, uint16_t id, void *data, size_t len, ui
     uint16_t cnt_his;
     struct nvs_ate wlk_ate;
     size_t ate_size;
-#ifdef CONFIG_NVS_DATA_CRC
+#if defined(CONFIG_NVS_DATA_CRC) && CONFIG_NVS_DATA_CRC
     uint32_t read_data_crc, computed_data_crc;
 #endif
 
@@ -1429,7 +1434,7 @@ ssize_t nvs_read_hist(struct nvs_fs *fs, uint16_t id, void *data, size_t len, ui
 
     cnt_his = 0U;
 
-#ifdef CONFIG_NVS_LOOKUP_CACHE
+#if defined(CONFIG_NVS_LOOKUP_CACHE) && CONFIG_NVS_LOOKUP_CACHE
     wlk_addr = fs->lookup_cache[nvs_lookup_cache_pos(id)];
 
     if (wlk_addr == NVS_LOOKUP_CACHE_NO_ADDR) {
@@ -1459,7 +1464,7 @@ ssize_t nvs_read_hist(struct nvs_fs *fs, uint16_t id, void *data, size_t len, ui
         return -ENOENT;
     }
 
-#ifdef CONFIG_NVS_DATA_CRC
+#if defined(CONFIG_NVS_DATA_CRC) && CONFIG_NVS_DATA_CRC
     /* When data CRC is enabled, there should be at least the CRC stored in the data field */
     if (wlk_ate.len < NVS_DATA_CRC_SIZE) {
         return -ENOENT;
@@ -1474,7 +1479,7 @@ ssize_t nvs_read_hist(struct nvs_fs *fs, uint16_t id, void *data, size_t len, ui
     }
 
     /* Check data CRC (only if the whole element data has been read) */
-#ifdef CONFIG_NVS_DATA_CRC
+#if defined(CONFIG_NVS_DATA_CRC) && CONFIG_NVS_DATA_CRC
     if (len >= (wlk_ate.len - NVS_DATA_CRC_SIZE)) {
         rd_addr += wlk_ate.len - NVS_DATA_CRC_SIZE;
         rc = nvs_flash_rd(fs, rd_addr, &read_data_crc, sizeof(read_data_crc));
@@ -1588,7 +1593,7 @@ int nvs_sector_use_next(struct nvs_fs *fs) {
         return -EACCES;
     }
 
-    fs->nvs_lock.lock(NVS_HAL_TIMEOUT_FOREVER);
+    fs->nvs_lock.lock(KVSS_HAL_TIMEOUT_FOREVER);
 
     ret = nvs_sector_close(fs);
     if (ret != 0) {

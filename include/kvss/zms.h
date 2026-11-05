@@ -30,6 +30,11 @@ extern "C" {
 #define BIT(n) (1UL << n)
 #endif
 
+/* Kconfig default used when the configuration layer does not provide it. */
+#if !defined(CONFIG_ZMS_LOOKUP_CACHE_SIZE)
+#define CONFIG_ZMS_LOOKUP_CACHE_SIZE 128
+#endif
+
 /**
  * @defgroup zms Zephyr Memory Storage (ZMS)
  * @since 4.0
@@ -61,7 +66,7 @@ enum zms_mount_flags {
  *
  * @note The width of this type depends on @kconfig{CONFIG_ZMS_ID_64BIT}.
  */
-#if CONFIG_ZMS_ID_64BIT
+#if defined(CONFIG_ZMS_ID_64BIT) && CONFIG_ZMS_ID_64BIT
 typedef uint64_t zms_id_t;
 #else
 typedef uint32_t zms_id_t;
@@ -76,7 +81,7 @@ typedef uint32_t zms_id_t;
  * iterator (@ref zms_iter_next / @ref zms_iter_next_all) can copy into a
  * caller-provided buffer.
  */
-#if CONFIG_ZMS_ID_64BIT
+#if defined(CONFIG_ZMS_ID_64BIT) && CONFIG_ZMS_ID_64BIT
 #define ZMS_DATA_IN_ATE_SIZE 4
 #else
 #define ZMS_DATA_IN_ATE_SIZE 8
@@ -118,18 +123,16 @@ struct zms_fs {
     uint8_t sector_cycle;
     /** Flag indicating if the file system is initialized */
     bool ready;
-    /** Flag indicating that `zms_lock` has been initialized */
-    bool lock_initialized;
     /** Mutex used to lock flash writes */
-    const struct kvss_hal_mutex zms_lock;
+    struct kvss_hal_mutex zms_lock;
     /** Flash device runtime structure */
-    const struct kvss_hal_flash flash_device;
+    struct kvss_hal_flash flash_device;
     /** Flash memory parameters structure */
     const struct flash_parameters *flash_parameters;
     /** Size of an Allocation Table Entry */
     size_t ate_size;
-#if CONFIG_ZMS_LOOKUP_CACHE
-#if CONFIG_ZMS_LOOKUP_CACHE_MANUAL
+#if defined(CONFIG_ZMS_LOOKUP_CACHE) && CONFIG_ZMS_LOOKUP_CACHE
+#if defined(CONFIG_ZMS_LOOKUP_CACHE_MANUAL) && CONFIG_ZMS_LOOKUP_CACHE_MANUAL
     /** Lookup table used to cache ATE addresses of written IDs */
     uint64_t *lookup_cache;
     /** Size of the lookup cache */
@@ -404,7 +407,7 @@ ssize_t zms_active_sector_free_space(struct zms_fs *fs);
  */
 int zms_sector_use_next(struct zms_fs *fs);
 
-#if CONFIG_ZMS_LOOKUP_CACHE_MANUAL
+#if defined(CONFIG_ZMS_LOOKUP_CACHE_MANUAL) && CONFIG_ZMS_LOOKUP_CACHE_MANUAL
 /**
  * @brief Assign a buffer for the lookup cache for a ZMS instance.
  *

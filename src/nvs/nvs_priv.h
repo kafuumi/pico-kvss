@@ -12,6 +12,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "kvss_port.h"
+#include "utils_micro.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -25,10 +28,6 @@ extern "C" {
 #define ADDR_SECT_MASK 0xFFFF0000
 #define ADDR_SECT_SHIFT 16
 #define ADDR_OFFS_MASK 0x0000FFFF
-
-#if !defined(KB)
-#define KB(value) (size_t)((value) << 10)
-#endif
 
 #define NVS_MAX_SECTOR_SIZE KB(64)
 
@@ -44,7 +43,7 @@ extern "C" {
 /*
  * Allow to use the NVS_DATA_CRC_SIZE macro in computations whether data CRC is enabled or not
  */
-#ifdef CONFIG_NVS_DATA_CRC
+#if defined(CONFIG_NVS_DATA_CRC) && CONFIG_NVS_DATA_CRC
 #define NVS_DATA_CRC_SIZE 4 /* CRC-32 size in bytes */
 #else
 #define NVS_DATA_CRC_SIZE 0
@@ -114,7 +113,7 @@ struct nvs_ate {
 _Static_assert(offsetof(struct nvs_ate, crc8) == sizeof(struct nvs_ate) - sizeof(uint8_t),
                "crc8 must be the last member");
 
-#if defined(CONFIG_ZTEST)
+#if defined(CONFIG_ZTEST) && CONFIG_ZTEST
 int nvs_flash_al_wrt_streams(struct nvs_fs *fs, uint32_t addr, const struct nvs_flash_wrt_stream *strm);
 #endif /* CONFIG_ZTEST */
 
