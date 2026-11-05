@@ -38,6 +38,9 @@ extern "C" {
 
 #define NVS_BLOCK_SIZE 32
 
+/* Buffer used to emulate an erase on devices without explicit erase. */
+#define NVS_FILL_BUFFER_SIZE 64
+
 #define NVS_LOOKUP_CACHE_NO_ADDR 0xFFFFFFFF
 
 /*

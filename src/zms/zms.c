@@ -13,7 +13,7 @@
 
 #include "kvss/zms.h"
 #include "kvss_crc.h"
-#include "zms_port.h"
+#include "kvss_port.h"
 #include "zms_priv.h"
 
 static int zms_prev_ate(struct zms_fs *fs, uint64_t *addr, struct zms_ate *ate);
@@ -148,7 +148,7 @@ static int zms_lookup_cache_rebuild(struct zms_fs *fs) {
             /* read the ate cycle only when we change the sector
              * or if it is the first read
              */
-            if (SECTOR_NUM(ate_addr) != previous_sector_num) {
+            if ((int)SECTOR_NUM(ate_addr) != previous_sector_num) {
                 rc = zms_get_sector_cycle(fs, ate_addr, &current_cycle);
                 if (rc == -ENOENT) {
                     /* sector never used */
@@ -161,7 +161,7 @@ static int zms_lookup_cache_rebuild(struct zms_fs *fs) {
             if (zms_ate_valid_different_sector(fs, &ate, current_cycle)) {
                 *cache_entry = ate_addr;
             }
-            previous_sector_num = SECTOR_NUM(ate_addr);
+            previous_sector_num = (int)SECTOR_NUM(ate_addr);
         }
 
         if (addr == fs->ate_wra) {
@@ -408,7 +408,7 @@ static int zms_flash_erase_sector(struct zms_fs *fs, uint64_t addr) {
     addr &= ADDR_SECT_MASK;
     offset = zms_addr_to_offset(fs, addr);
 
-    LOG_DBG("Erasing flash at offset 0x%lx ( 0x%llx ), len %u", (long)offset, addr, fs->sector_size);
+    LOG_DBG("Erasing flash at offset 0x%lx ( 0x%" PRIx64 " ), len %u", (long)offset, addr, fs->sector_size);
 
 #if defined(CONFIG_ZMS_LOOKUP_CACHE) && CONFIG_ZMS_LOOKUP_CACHE
     zms_lookup_cache_invalidate(fs, SECTOR_NUM(addr));
@@ -473,6 +473,8 @@ static int zms_ate_valid(struct zms_fs *fs, const struct zms_ate *entry) {
  *            0 otherwise
  */
 static int zms_ate_valid_different_sector(struct zms_fs *fs, const struct zms_ate *entry, uint8_t cycle_cnt) {
+    (void)fs;
+
     if ((cycle_cnt != entry->cycle_cnt) || zms_ate_crc8_check(entry)) {
         return 0;
     }
@@ -487,7 +489,7 @@ static inline int zms_get_cycle_on_sector_change(struct zms_fs *fs, uint64_t add
     /* read the ate cycle only when we change the sector
      * or if it is the first read
      */
-    if (SECTOR_NUM(addr) != previous_sector_num) {
+    if ((int)SECTOR_NUM(addr) != previous_sector_num) {
         rc = zms_get_sector_cycle(fs, addr, cycle_cnt);
         if (rc == -ENOENT) {
             /* sector never used */
@@ -816,7 +818,7 @@ static int zms_add_gc_done_ate(struct zms_fs *fs) {
     /* Initialize all members to 0xff */
     memset(&gc_done_ate, 0xff, sizeof(struct zms_ate));
 
-    LOG_DBG("Adding gc done ate at %llx", fs->ate_wra);
+    LOG_DBG("Adding gc done ate at %" PRIx64, fs->ate_wra);
     gc_done_ate.id = ZMS_HEAD_ID;
     gc_done_ate.len = 0U;
     gc_done_ate.offset = (uint32_t)SECTOR_OFFSET(fs->data_wra);
@@ -870,7 +872,7 @@ static int zms_add_empty_ate(struct zms_fs *fs, uint64_t addr, uint32_t prev_cyc
 
     addr &= ADDR_SECT_MASK;
 
-    LOG_DBG("Adding empty ate at %llx", (uint64_t)(addr + fs->sector_size - fs->ate_size));
+    LOG_DBG("Adding empty ate at %" PRIx64, (uint64_t)(addr + fs->sector_size - fs->ate_size));
     empty_ate.id = ZMS_HEAD_ID;
     empty_ate.len = 0xffff;
     empty_ate.metadata = FIELD_PREP(ZMS_VERSION_MASK, ZMS_DEFAULT_VERSION) |
@@ -1048,7 +1050,7 @@ static int zms_find_ate_with_id(struct zms_fs *fs, zms_id_t id, uint64_t start_a
                 prev_found = 1;
                 break;
             }
-            previous_sector_num = SECTOR_NUM(wlk_prev_addr);
+            previous_sector_num = (int)SECTOR_NUM(wlk_prev_addr);
         }
     } while (wlk_addr != end_addr);
 
@@ -1947,7 +1949,7 @@ ssize_t zms_read(struct zms_fs *fs, zms_id_t id, void *data, size_t len) {
     }
 
     /* returns the minimum between ATE data length and requested length */
-    return MIN(rc, len);
+    return (rc < (ssize_t)len) ? rc : (ssize_t)len;
 }
 
 ssize_t zms_get_data_length(struct zms_fs *fs, zms_id_t id) {
@@ -2270,7 +2272,7 @@ static int zms_iter_filter_common(struct zms_fs *fs, struct zms_iter *iter, stru
     if (rc) {
         return rc;
     }
-    *previous_sector_num = SECTOR_NUM(ate_addr);
+    *previous_sector_num = (int)SECTOR_NUM(ate_addr);
 
     if (!zms_ate_valid_different_sector(fs, ate, *current_cycle)) {
         return 0;

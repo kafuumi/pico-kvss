@@ -22,4 +22,11 @@ target_compile_options(${KVSS_ZMS} PRIVATE -Wall -Wextra)
 target_include_directories(${KVSS_ZMS} PUBLIC "include/")
 target_include_directories(${KVSS_ZMS} PRIVATE "src/kvss/")
 
+option(KVSS_BUILD_TESTS "Build host tests" OFF)
+
+if(KVSS_BUILD_TESTS)
+        enable_testing()
+        add_subdirectory(tests)
+endif()
+
 

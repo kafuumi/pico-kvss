@@ -28,4 +28,18 @@
 #define KVSS_TESTABLE_STATIC static
 #endif
 
+/*
+ * Logging used by NVS and ZMS.
+ *
+ * Define KVSS_PORT_LOG_IMPL and provide LOG_DBG/LOG_INF/LOG_WRN/LOG_ERR
+ * yourself to route logs to a different backend (or to disable them).
+ */
+#if !defined(KVSS_PORT_LOG_IMPL)
+#include <stdio.h>
+#define LOG_DBG printf
+#define LOG_ERR printf
+#define LOG_INF printf
+#define LOG_WRN printf
+#endif
+
 #endif /* KVSS_PORT_H_ */

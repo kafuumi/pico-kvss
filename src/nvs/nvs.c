@@ -12,7 +12,7 @@
 
 #include "kvss/nvs.h"
 #include "kvss_crc.h"
-#include "nvs_port.h"
+#include "kvss_port.h"
 #include "nvs_priv.h"
 
 static int nvs_prev_ate(struct nvs_fs *fs, uint32_t *addr, struct nvs_ate *ate);
@@ -433,6 +433,28 @@ static int nvs_flash_block_move(struct nvs_fs *fs, uint32_t addr, struct nvs_blo
     return 0;
 }
 
+/* fill a region with the erase value on devices without explicit erase */
+static int nvs_flash_fill(struct nvs_fs *fs, uint32_t addr, uint8_t value, size_t len) {
+    uint8_t buf[NVS_FILL_BUFFER_SIZE];
+    int rc;
+
+    memset(buf, value, sizeof(buf));
+
+    while (len) {
+        size_t chunk = MIN(len, sizeof(buf));
+
+        rc = nvs_flash_al_wrt(fs, addr, buf, chunk);
+        if (rc) {
+            return rc;
+        }
+
+        addr += chunk;
+        len -= chunk;
+    }
+
+    return 0;
+}
+
 /* erase a sector and verify erase was OK.
  * return 0 if OK, errorcode on error.
  */
@@ -450,7 +472,11 @@ static int nvs_flash_erase_sector(struct nvs_fs *fs, uint32_t addr) {
 #if defined(CONFIG_NVS_LOOKUP_CACHE) && CONFIG_NVS_LOOKUP_CACHE
     nvs_lookup_cache_invalidate(fs, addr >> ADDR_SECT_SHIFT);
 #endif
-    rc = flash_flatten(fs->flash_device, (uint32_t)offset, fs->sector_size);
+    if (kvss_flash_params_get_erase_cap(fs->flash_parameters) & KVSS_FLASH_ERASE_C_EXPLICIT) {
+        rc = flash_flatten(fs->flash_device, (uint32_t)offset, fs->sector_size);
+    } else {
+        rc = nvs_flash_fill(fs, addr, fs->flash_parameters->erase_value, fs->sector_size);
+    }
 
     if (rc) {
         return rc;
@@ -1417,6 +1443,7 @@ ssize_t nvs_read_hist(struct nvs_fs *fs, uint16_t id, void *data, size_t len, ui
     uint16_t cnt_his;
     struct nvs_ate wlk_ate;
     size_t ate_size;
+    size_t data_len;
 #if defined(CONFIG_NVS_DATA_CRC) && CONFIG_NVS_DATA_CRC
     uint32_t read_data_crc, computed_data_crc;
 #endif
@@ -1471,23 +1498,25 @@ ssize_t nvs_read_hist(struct nvs_fs *fs, uint16_t id, void *data, size_t len, ui
     }
 #endif
 
+    data_len = (size_t)wlk_ate.len - NVS_DATA_CRC_SIZE;
+
     rd_addr &= ADDR_SECT_MASK;
     rd_addr += wlk_ate.offset;
-    rc = nvs_flash_rd(fs, rd_addr, data, MIN(len, wlk_ate.len - NVS_DATA_CRC_SIZE));
+    rc = nvs_flash_rd(fs, rd_addr, data, MIN(len, data_len));
     if (rc) {
         goto err;
     }
 
     /* Check data CRC (only if the whole element data has been read) */
 #if defined(CONFIG_NVS_DATA_CRC) && CONFIG_NVS_DATA_CRC
-    if (len >= (wlk_ate.len - NVS_DATA_CRC_SIZE)) {
-        rd_addr += wlk_ate.len - NVS_DATA_CRC_SIZE;
+    if (len >= data_len) {
+        rd_addr += data_len;
         rc = nvs_flash_rd(fs, rd_addr, &read_data_crc, sizeof(read_data_crc));
         if (rc) {
             goto err;
         }
 
-        computed_data_crc = crc32_ieee(data, wlk_ate.len - NVS_DATA_CRC_SIZE);
+        computed_data_crc = crc32_ieee(data, data_len);
         if (read_data_crc != computed_data_crc) {
             LOG_ERR("Invalid data CRC: read_data_crc=0x%08X, computed_data_crc=0x%08X", read_data_crc,
                     computed_data_crc);
@@ -1497,7 +1526,7 @@ ssize_t nvs_read_hist(struct nvs_fs *fs, uint16_t id, void *data, size_t len, ui
     }
 #endif
 
-    return wlk_ate.len - NVS_DATA_CRC_SIZE;
+    return (ssize_t)data_len;
 
 err:
     return rc;
